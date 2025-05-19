@@ -1,0 +1,64 @@
+#include "packet_parser.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <arpa/inet.h>
+
+PacketInfo* create_packet_info(const uint8_t *data, size_t length) {
+    PacketInfo *info = (PacketInfo*)malloc(sizeof(PacketInfo));
+    if (!info) return NULL;
+    
+    uint8_t *data_copy = (uint8_t*)malloc(length);
+    if (!data_copy) {
+        free(info);
+        return NULL;
+    }
+    
+    memcpy(data_copy, data, length);
+    info->data = data_copy;
+    info->length = length;
+    return info;
+}
+
+void free_packet_info(PacketInfo *info) {
+    if (info) {
+        if (info->data) free((void*)info->data);
+        free(info);
+    }
+}
+
+void parse_packet(PacketInfo *info) {
+    if (!info || !info->data || info->length < sizeof(MyEthHeader)) {
+        printf("无效的数据包\n");
+        return;
+    }
+    
+    const MyEthHeader *eth_header = (const MyEthHeader*)info->data;
+    
+    // 检查是否为IP数据包
+    uint16_t ether_type = ntohs(eth_header->ether_type);
+    if (ether_type != 0x0800) {
+        printf("非IP数据包，无法解析IP地址\n");
+        return;
+    }
+    
+    // 计算IP头部位置
+    if (info->length < sizeof(MyEthHeader) + sizeof(MyIpHeader)) {
+        printf("IP数据包长度不足\n");
+        return;
+    }
+    
+    const MyIpHeader *ip_header = (const MyIpHeader*)(info->data + sizeof(MyEthHeader));
+    
+    // 提取源IP和目的IP
+    char src_ip[INET_ADDRSTRLEN];
+    char dst_ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(ip_header->src_ip), src_ip, INET_ADDRSTRLEN);
+    inet_ntop(AF_INET, &(ip_header->dst_ip), dst_ip, INET_ADDRSTRLEN);
+    
+    // 计算流量大小
+    int total_size = ntohs(ip_header->total_length);
+    
+    // 输出解析结果
+    printf("源IP地址: %s,目的IP地址: %s,流量大小: %d bytes\n", src_ip, dst_ip, total_size);
+}

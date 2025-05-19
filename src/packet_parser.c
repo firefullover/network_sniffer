@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <arpa/inet.h>
+#include <netinet/in.h>
 
 PacketInfo* create_packet_info(const uint8_t *data, size_t length) {
     PacketInfo *info = (PacketInfo*)malloc(sizeof(PacketInfo));

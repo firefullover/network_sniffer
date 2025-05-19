@@ -1,22 +1,18 @@
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdint.h>
 #include <signal.h>
 #include <pthread.h>
 #include <pcap.h>
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <netinet/ip.h>
-#include <netinet/ether.h>
-#include <sys/types.h>
 #include "packet_parser.h" 
+#include "packet_logger.h"
 
 volatile int running = 1;
 pcap_t *handle = NULL;
+PacketLogger *packet_logger = NULL;
+char local_ip[INET_ADDRSTRLEN] = {0};// 抓包句柄
 
 // 信号处理函数
 void handle_signal(int signal) {
+    printf("\n正在停止抓包并保存记录...");
     running = 0;
     pcap_breakloop(handle);
 }
@@ -24,7 +20,43 @@ void handle_signal(int signal) {
 // 数据包解析线程
 void *packet_parsing_callback(void *arg) {
     PacketInfo *packet_info = (PacketInfo *)arg;
-    parse_packet(packet_info);       // 解析数据包
+    
+    // 检查数据包有效性
+    if (!packet_info || !packet_info->data || packet_info->length < sizeof(MyEthHeader)) {
+        free_packet_info(packet_info);   // 释放数据包内存
+        return NULL;
+    }
+    
+    // 解析以太网头部
+    const MyEthHeader *eth_header = (const MyEthHeader*)packet_info->data;
+    
+    // 检查是否为IP数据包（以太网类型为0x0800）
+    uint16_t ether_type = ntohs(eth_header->ether_type);
+    if (ether_type == 0x0800 && packet_info->length >= sizeof(MyEthHeader) + sizeof(MyIpHeader)) {
+        // 解析IP头部
+        const MyIpHeader *ip_header = (const MyIpHeader*)(packet_info->data + sizeof(MyEthHeader));
+        
+        // 提取源IP和目的IP地址
+        char src_ip[INET_ADDRSTRLEN];
+        char dst_ip[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &(ip_header->src_addr), src_ip, INET_ADDRSTRLEN);
+        inet_ntop(AF_INET, &(ip_header->dst_addr), dst_ip, INET_ADDRSTRLEN);
+        
+        // 计算IP层总长度
+        int total_size = ntohs(ip_header->total_length);
+        
+        // 判断数据包方向（发送或接收）
+        int is_outgoing = 0;
+        if (strcmp(src_ip, local_ip) == 0) {
+            is_outgoing = 1;  // 本机发出的数据包
+            log_packet(packet_logger, local_ip, dst_ip, is_outgoing, total_size);
+        } else if (strcmp(dst_ip, local_ip) == 0) {
+            is_outgoing = 0;  // 本机接收的数据包
+            log_packet(packet_logger, local_ip, src_ip, is_outgoing, total_size);
+        }
+    }
+    
+    parse_packet(packet_info);       // 解析数据包（原有功能）
     free_packet_info(packet_info);   // 释放数据包内存
     return NULL;
 }
@@ -34,7 +66,7 @@ void packet_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *byt
     int *packet_count = (int *)user;
     (*packet_count)++;
     
-    // 申请内存保存数据包，并由线程来处理
+    // 申请内存保存数据包，并传递给线程来处理
     PacketInfo *packet_info = create_packet_info(bytes, h->caplen);
     if (!packet_info) return;
     
@@ -44,6 +76,19 @@ void packet_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *byt
 }
 
 int main() {
+    // 初始化数据包记录器
+    packet_logger = init_packet_logger();
+    if (!packet_logger) {
+        fprintf(stderr, "无法初始化数据包记录器\n");
+        return 1;
+    }
+    
+    // 获取本机IP地址
+    if (!get_local_ip(local_ip, INET_ADDRSTRLEN)) {
+        strcpy(local_ip, "127.0.0.1");  // 如果获取失败，使用回环地址
+    }
+    printf("本机IP地址: %s\n", local_ip);
+    
     // 设置信号处理器
     signal(SIGINT, handle_signal);
 
@@ -76,6 +121,12 @@ int main() {
     pcap_close(handle);
     pcap_freealldevs(devs);
     printf("捕获到 %d 个数据包\n", packet_count);
+    
+    // 将数据包记录写入文件
+    write_logs_to_file(packet_logger);
+    
+    // 释放数据包记录器
+    free_packet_logger(packet_logger);
     printf("抓包结束\n");
 
     return 0;

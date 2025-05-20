@@ -5,14 +5,13 @@
 #include "packet_parser.h" 
 #include "packet_logger.h"
 
-volatile int running = 1;
-pcap_t *handle = NULL;
-PacketLogger *packet_logger = NULL;
-char local_ip[INET_ADDRSTRLEN] = {0};// 抓包句柄
+volatile int running = 1;                 // 运行标志
+pcap_t *handle = NULL;                    // 抓包句柄
+PacketLogger *packet_logger = NULL;       // 数据包记录器
+char local_ip[INET_ADDRSTRLEN] = {0};     // 设备IP
 
 // 信号处理函数
 void handle_signal(int signal) {
-    printf("\n正在停止抓包并保存记录...");
     running = 0;
     pcap_breakloop(handle);
 }
@@ -20,9 +19,10 @@ void handle_signal(int signal) {
 // 数据包解析线程
 void *packet_parsing_callback(void *arg) {
     PacketInfo *packet_info = (PacketInfo *)arg;
+    parse_packet(packet_info);  // 解析数据包
     
     // 检查数据包有效性
-    if (!packet_info || !packet_info->data || packet_info->length < sizeof(MyEthHeader)) {
+    if (!packet_info || !packet_info->data || packet_info->length < sizeof(MyEthHeader) ) {
         free_packet_info(packet_info);   // 释放数据包内存
         return NULL;
     }
@@ -56,7 +56,6 @@ void *packet_parsing_callback(void *arg) {
         }
     }
     
-    parse_packet(packet_info);       // 解析数据包（原有功能）
     free_packet_info(packet_info);   // 释放数据包内存
     return NULL;
 }
@@ -67,7 +66,7 @@ void packet_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *byt
     (*packet_count)++;
     
     // 申请内存保存数据包，并传递给线程来处理
-    PacketInfo *packet_info = create_packet_info(bytes, h->caplen);
+    PacketInfo *packet_info = create_packet_info(bytes, h->caplen, h->ts);
     if (!packet_info) return;
     
     pthread_t tid;
@@ -79,7 +78,7 @@ int main() {
     // 初始化数据包记录器
     packet_logger = init_packet_logger();
     if (!packet_logger) {
-        fprintf(stderr, "无法初始化数据包记录器\n");
+        fprintf(stderr, "初始化数据包记录器失败\n");
         return 1;
     }
     
@@ -116,18 +115,15 @@ int main() {
     // 开始抓包
     int packet_count = 0;
     pcap_loop(handle, 0, packet_handler, (u_char *)&packet_count);
-
-    // 关闭抓包并释放资源
-    pcap_close(handle);
-    pcap_freealldevs(devs);
     printf("捕获到 %d 个数据包\n", packet_count);
     
     // 将数据包记录写入文件
     write_logs_to_file(packet_logger);
-    
-    // 释放数据包记录器
+
+    // 释放资源
+    pcap_close(handle);
+    pcap_freealldevs(devs);
     free_packet_logger(packet_logger);
-    printf("抓包结束\n");
 
     return 0;
 }

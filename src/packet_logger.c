@@ -29,7 +29,7 @@ void log_packet(PacketLogger *logger, const char *local_ip, const char *remote_i
     PacketLogNode *node = (PacketLogNode*)malloc(sizeof(PacketLogNode));
     if (!node) return;
     
-    // 获取当前时间
+    // 记录时间
     time_t now = time(NULL);
     struct tm *tm_info = localtime(&now);
     strftime(node->record.timestamp, sizeof(node->record.timestamp), "%Y-%m-%d %H:%M:%S", tm_info);
@@ -41,11 +41,13 @@ void log_packet(PacketLogger *logger, const char *local_ip, const char *remote_i
     strncpy(node->record.remote_ip, remote_ip, INET_ADDRSTRLEN - 1);
     node->record.remote_ip[INET_ADDRSTRLEN - 1] = '\0';
     
-    node->record.direction = is_outgoing ? '>' : '<';
+    strncpy(node->record.direction, is_outgoing ? "->" : "<-", sizeof(node->record.direction) - 1);
+    node->record.direction[sizeof(node->record.direction) - 1] = '\0';
+    
     node->record.packet_size = size;
     node->next = NULL;
     
-    // 添加到链表
+    // 记录数据（链表结构）
     pthread_mutex_lock(&logger->mutex);
     
     if (logger->tail) {
@@ -67,7 +69,7 @@ int write_logs_to_file(PacketLogger *logger) {
     char filename[100];
     time_t now = time(NULL);
     struct tm *tm_info = localtime(&now);
-    strftime(filename, sizeof(filename), "packet_log_%Y-%m-%d_%H-%M-%S.txt", tm_info);
+    strftime(filename, sizeof(filename), "packet_log_%Y-%m-%dT%H:00.txt", tm_info);
     
     // 打开文件
     FILE *file = fopen(filename, "w");
@@ -82,11 +84,11 @@ int write_logs_to_file(PacketLogger *logger) {
     
     // 写入文件头
     fprintf(file, "# 网络数据包记录 - 生成时间: %s\n", ctime(&now));
-    fprintf(file, "# 格式: [时间戳] 本机IP 方向 远程IP 数据包大小(字节)\n\n");
+    // fprintf(file, "# 格式: [时间戳] 本机IP 传输方向 远程IP 数据包大小(字节)\n");
     
     // 写入每条记录
     while (current) {
-        fprintf(file, "[%s] %s %c %s %d\n", 
+        fprintf(file, "[%s] %s %s %s %d字节\n", 
                 current->record.timestamp,
                 current->record.local_ip,
                 current->record.direction,

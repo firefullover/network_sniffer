@@ -5,7 +5,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
-PacketInfo* create_packet_info(const uint8_t *data, size_t length) {
+PacketInfo* create_packet_info(const uint8_t *data, size_t length, struct timeval ts) {
     PacketInfo *info = (PacketInfo*)malloc(sizeof(PacketInfo));
     if (!info) return NULL;
     
@@ -19,6 +19,7 @@ PacketInfo* create_packet_info(const uint8_t *data, size_t length) {
     memcpy(data_copy, data, length);
     info->data = data_copy;
     info->length = length;
+    info->ts = ts;
     return info;
 }
 
@@ -42,13 +43,13 @@ void parse_packet(PacketInfo *info) {
     // 检查是否为IP数据包（以太网类型为0x0800）
     uint16_t ether_type = ntohs(eth_header->ether_type);
     if (ether_type != 0x0800) {
-        printf("非IP数据包，无法解析IP地址\n");
+        // printf("非IP数据包，无法解析IP地址\n");
         return;
     }
     
     // 检查数据包长度是否足够包含IP头部
     if (info->length < sizeof(MyEthHeader) + sizeof(MyIpHeader)) {
-        printf("IP数据包长度不足\n");
+        // printf("IP数据包长度不足\n");
         return;
     }
     
@@ -65,5 +66,5 @@ void parse_packet(PacketInfo *info) {
     int total_size = ntohs(ip_header->total_length);
     
     // 输出解析结果
-    printf("源IP地址: %s,目的IP地址: %s,流量大小: %d bytes\n", src_ip, dst_ip, total_size);
+    // printf("源IP地址: %s,目的IP地址: %s,流量大小: %d bytes\n", src_ip, dst_ip, total_size);
 }

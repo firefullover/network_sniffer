@@ -9,7 +9,6 @@
 volatile int running = 1;                 // 运行标志
 pcap_t *handle = NULL;                    // 抓包句柄
 PacketLogger *packet_logger = NULL;       // 数据包记录器
-TrafficAnalyzer *traffic_analyzer = NULL; // 流量统计器
 char local_ip[INET_ADDRSTRLEN] = {0};     // 设备IP
 
 // 信号处理函数
@@ -64,9 +63,6 @@ void *packet_parsing_callback(void *arg) {
 
 // 抓包回调函数
 void packet_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes) {
-    int *packet_count = (int *)user;
-    (*packet_count)++;
-    
     // 申请内存保存数据包，并传递给线程来处理
     PacketInfo *packet_info = create_packet_info(bytes, h->caplen, h->ts);
     if (!packet_info) return;
@@ -85,7 +81,7 @@ int main() {
     }
     
     // 初始化流量分析器
-    traffic_analyzer = init_traffic_analyzer();
+    TrafficAnalyzer *traffic_analyzer  = init_traffic_analyzer();
     if (!traffic_analyzer) {
         fprintf(stderr, "初始化流量分析器失败\n");
         free_packet_logger(packet_logger);
@@ -94,7 +90,7 @@ int main() {
     
     // 获取本机IP地址
     if (!get_local_ip(local_ip, INET_ADDRSTRLEN)) {
-        strcpy(local_ip, "127.0.0.1");  // 如果获取失败，使用回环地址
+        return 1;
     }
     printf("本机IP地址: %s\n", local_ip);
     
@@ -123,23 +119,21 @@ int main() {
     }
 
     // 开始抓包
-    int packet_count = 0;
-    pcap_loop(handle, 0, packet_handler, (u_char *)&packet_count);
-    printf("捕获到 %d 个数据包\n", packet_count);
+    pcap_loop(handle, 0, packet_handler, NULL);
     
-    // 将数据包记录写入文件
+    // 按下ctrl+c触发信号，停止抓包，并记录包的数据流量
     write_logs_to_file(packet_logger);
     
-    // 分析流量并生成统计报告
-    printf("正在分析网络流量...\n");
+    // 统计流量并生成日志
     analyze_traffic(traffic_analyzer, packet_logger);
     write_traffic_stats_to_file(traffic_analyzer);
 
     // 释放资源
     pcap_close(handle);
     pcap_freealldevs(devs);
-    free_packet_logger(packet_logger);
-    free_traffic_analyzer(traffic_analyzer);
+
+    free_packet_logger(packet_logger);// 释放数据包记录器
+    free_traffic_analyzer(traffic_analyzer);// 释放流量统计器
 
     return 0;
 }

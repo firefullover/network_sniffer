@@ -15,6 +15,6 @@ include_directories(include)
 # 源文件
 file(GLOB SOURCES "src/main.c" "src/packet_logger.c" "src/packet_parser.c" "src/traffic_analyzer.c")
 
-add_executable(traffic_analyzer ${SOURCES})
+add_executable(network_sniffer ${SOURCES})
 
-target_link_libraries(traffic_analyzer ${PCAP_LIBRARY} pthread)
+target_link_libraries(network_sniffer ${PCAP_LIBRARY} pthread)

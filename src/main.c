@@ -4,10 +4,12 @@
 #include <pcap.h>
 #include "packet_parser.h" 
 #include "packet_logger.h"
+#include "traffic_analyzer.h"
 
 volatile int running = 1;                 // 运行标志
 pcap_t *handle = NULL;                    // 抓包句柄
 PacketLogger *packet_logger = NULL;       // 数据包记录器
+TrafficAnalyzer *traffic_analyzer = NULL; // 流量分析器
 char local_ip[INET_ADDRSTRLEN] = {0};     // 设备IP
 
 // 信号处理函数
@@ -82,6 +84,14 @@ int main() {
         return 1;
     }
     
+    // 初始化流量分析器
+    traffic_analyzer = init_traffic_analyzer();
+    if (!traffic_analyzer) {
+        fprintf(stderr, "初始化流量分析器失败\n");
+        free_packet_logger(packet_logger);
+        return 1;
+    }
+    
     // 获取本机IP地址
     if (!get_local_ip(local_ip, INET_ADDRSTRLEN)) {
         strcpy(local_ip, "127.0.0.1");  // 如果获取失败，使用回环地址
@@ -119,11 +129,17 @@ int main() {
     
     // 将数据包记录写入文件
     write_logs_to_file(packet_logger);
+    
+    // 分析流量并生成统计报告
+    printf("正在分析网络流量...\n");
+    analyze_traffic(traffic_analyzer, packet_logger);
+    write_traffic_stats_to_file(traffic_analyzer);
 
     // 释放资源
     pcap_close(handle);
     pcap_freealldevs(devs);
     free_packet_logger(packet_logger);
+    free_traffic_analyzer(traffic_analyzer);
 
     return 0;
 }

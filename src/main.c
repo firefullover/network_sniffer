@@ -9,7 +9,7 @@
 volatile int running = 1;                 // 运行标志
 pcap_t *handle = NULL;                    // 抓包句柄
 PacketLogger *packet_logger = NULL;       // 数据包记录器
-TrafficAnalyzer *traffic_analyzer = NULL; // 流量分析器
+TrafficAnalyzer *traffic_analyzer = NULL; // 流量统计器
 char local_ip[INET_ADDRSTRLEN] = {0};     // 设备IP
 
 // 信号处理函数

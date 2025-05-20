@@ -88,7 +88,7 @@ int analyze_traffic(TrafficAnalyzer *analyzer, PacketLogger *logger) {
     return count;
 }
 
-// 将流量统计结果写入文件
+// 打印流量统计
 int write_traffic_stats_to_file(TrafficAnalyzer *analyzer) {
     if (!analyzer) return 0;
     
@@ -104,13 +104,12 @@ int write_traffic_stats_to_file(TrafficAnalyzer *analyzer) {
     if (!file) return 0;
     
     // 写入文件头
-    fprintf(file, "# 网络流量统计报告 - 生成时间: %s", ctime(&now));
-    fprintf(file, "# 格式: [本机IP] <-> [远程IP] | 流出: xxx字节 | 流入: xxx字节 | 总计: xxx字节\n\n");
-    
+    fprintf(file, "# 流量统计报告 - 生成时间: %s\n", ctime(&now));
+
     // 打印表格头部
-    fprintf(file, "+-----------------+----------------+---------------+---------------+----------------+\n");
-    fprintf(file, "|     本机IP      |     远程IP     |   流出流量    |   流入流量    |    总流量     |\n");
-    fprintf(file, "+-----------------+----------------+---------------+---------------+----------------+\n");
+    fprintf(file, "+-------------------+------------------+-----------------+------------------+-----------------+\n");
+    fprintf(file, "|      本机IP        |      远程IP       |      流出流量    |      流入流量    |        总流量     |\n");
+    fprintf(file, "+-------------------+------------------+-----------------+------------------+-----------------+\n");
     
     int count = 0;
     TrafficStatNode *current = analyzer->head;
@@ -123,29 +122,27 @@ int write_traffic_stats_to_file(TrafficAnalyzer *analyzer) {
     
     // 写入每条统计记录（新格式）
     while (current) {
-        fprintf(file, "| %-15s | %-14s | %10lu字节 | %10lu字节 | %11lu字节 |\n",
+        fprintf(file, "| %-17s | %-16s | %'12lu字节 | %'12lu字节 | %'12lu字节 |\n",
                 current->stat.local_ip,
                 current->stat.remote_ip,
                 current->stat.outgoing_bytes,
                 current->stat.incoming_bytes,
                 current->stat.outgoing_bytes + current->stat.incoming_bytes);
         
-        fprintf(file, "+-----------------+----------------+---------------+---------------+----------------+\n");
+    fprintf(file, "+-------------------+------------------+-----------------+------------------+-----------------+\n");
         
         total_outgoing += current->stat.outgoing_bytes;
         total_incoming += current->stat.incoming_bytes;
         current = current->next;
         count++;
     }
+
     
-    // 写入总计
-    // 打印表格尾部
-    fprintf(file, "| %-15s | %-14s | %10lu字节 | %10lu字节 | %11lu字节 |\n",
-            "总计", "", total_outgoing, total_incoming, total_outgoing + total_incoming);
-    fprintf(file, "+-----------------+----------------+---------------+---------------+----------------+\n");
-    
-    // 写入时间信息
-    fprintf(file, "\n# 报告生成时间: %s\n", timestamp);
+    // 写入总计    
+    fprintf(file, "\n# 统计总流量\n");
+    fprintf(file, "# 流出: %lu 字节\n", total_outgoing);
+    fprintf(file, "# 流入: %lu 字节\n", total_incoming);
+    fprintf(file, "# 总计: %lu 字节\n", total_outgoing + total_incoming);
     
     // 关闭文件
     fclose(file);

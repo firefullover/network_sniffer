@@ -11,7 +11,6 @@ TrafficAnalyzer* init_traffic_analyzer() {
 
     analyzer->head = NULL;
     analyzer->count = 0;
-    pthread_mutex_init(&analyzer->statistics_mutex, NULL);
 
     return analyzer;
 }
@@ -19,8 +18,6 @@ TrafficAnalyzer* init_traffic_analyzer() {
 // 更新流量统计
 void statistic_packet(TrafficAnalyzer *analyzer, const char *src_ip, const char *dst_ip,const char *local_ip, int size) {
     if (!analyzer) return;
-    
-    pthread_mutex_lock(&analyzer->statistics_mutex);
     
     char remote_ip[INET_ADDRSTRLEN];
     int is_outgoing = 0; // 记录数据方向
@@ -51,8 +48,6 @@ void statistic_packet(TrafficAnalyzer *analyzer, const char *src_ip, const char 
             stat_node->stat.incoming_bytes += size;
         }
     }
-    
-    pthread_mutex_unlock(&analyzer->statistics_mutex);
 }
 
 // 查找或创建流量统计节点
@@ -154,8 +149,6 @@ int write_traffic_stats_to_file(TrafficAnalyzer *analyzer) {
 // 释放流量分析器及其所有记录
 void free_traffic_analyzer(TrafficAnalyzer *analyzer) {
     if (!analyzer) return;
-    pthread_mutex_destroy(&analyzer->statistics_mutex);
-
     // 释放所有节点
     TrafficStatNode *current = analyzer->head;
     TrafficStatNode *next;

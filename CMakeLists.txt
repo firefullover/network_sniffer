@@ -15,6 +15,10 @@ include_directories(include)
 # 源文件
 file(GLOB SOURCES "src/*")
 
+# 构建共享库
+add_library(thread_pool SHARED src/thread_pool.c)
+target_include_directories(thread_pool PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
 add_executable(network_sniffer ${SOURCES})
 
 target_link_libraries(network_sniffer ${PCAP_LIBRARY} pthread)

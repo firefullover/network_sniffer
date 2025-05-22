@@ -22,7 +22,6 @@ typedef struct TrafficStatNode {
 typedef struct {
     TrafficStatNode *head;  // 头指针
     int count;              // 记录数量
-    pthread_mutex_t statistics_mutex;  // 互斥锁
 } TrafficAnalyzer;
 
 /**

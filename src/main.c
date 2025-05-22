@@ -2,12 +2,13 @@
 #include <signal.h>
 #include <pthread.h>
 #include <pcap.h>
+#include <netinet/in.h>
 #include "packet_parser.h" 
 #include "packet_logger.h"
 
 volatile int running = 1;                 // 运行标志
 pcap_t *handle = NULL;                    // 抓包句柄
-PacketLogger *packet_logger = NULL;       // 数据包记录结构体
+TrafficAnalyzer *traffic_analyzer = NULL; // 流量分析结构体
 char local_ip[INET_ADDRSTRLEN] = {0};     // 设备IP
 
 // 信号处理函数
@@ -19,51 +20,26 @@ void handle_signal(int signal) {
 // 数据包解析线程
 void *packet_parsing_callback(void *arg) {
     PacketInfo *packet_info = (PacketInfo *)arg;
-    parse_packet(packet_info);  // 解析数据包
-    
-    // 检查数据包有效性
-    if (!packet_info || !packet_info->data || packet_info->length < sizeof(MyEthHeader) ) {
+    Packetdelivery* data = parse_packet(packet_info);  // 解析数据包
+    if (!data) {
         free_packet_info(packet_info);   // 释放数据包内存
         return NULL;
     }
-    
-    // 解析以太网头部
-    const MyEthHeader *eth_header = (const MyEthHeader*)packet_info->data;
-    
-    // 检查是否为IP数据包（以太网类型为0x0800）
-    uint16_t ether_type = ntohs(eth_header->ether_type);
-    if (ether_type == 0x0800 && packet_info->length >= sizeof(MyEthHeader) + sizeof(MyIpHeader)) {
-        // 解析IP头部
-        const MyIpHeader *ip_header = (const MyIpHeader*)(packet_info->data + sizeof(MyEthHeader));
-        
-        // 提取源IP和目的IP地址
-        char src_ip[INET_ADDRSTRLEN];
-        char dst_ip[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &(ip_header->src_addr), src_ip, INET_ADDRSTRLEN);
-        inet_ntop(AF_INET, &(ip_header->dst_addr), dst_ip, INET_ADDRSTRLEN);
-        
-        // 计算IP层总长度
-        int total_size = ntohs(ip_header->total_length);
-        
-        // 判断数据包方向（发送或接收）
-        int is_outgoing = 0;
-        if (strcmp(src_ip, local_ip) == 0) {
-            is_outgoing = 1;  // 本机发出的数据包
-            log_packet(packet_logger, local_ip, dst_ip, is_outgoing, total_size);
-        } else if (strcmp(dst_ip, local_ip) == 0) {
-            is_outgoing = 0;  // 本机接收的数据包
-            log_packet(packet_logger, local_ip, src_ip, is_outgoing, total_size);
-        }
-    }
-    
+
+    //统计流量
+    statistic_packet(traffic_analyzer, data->src_ip, data->dst_ip, local_ip, data->total_size);
+
+    free_packet_delivery(data);      // 释放解析结果
     free_packet_info(packet_info);   // 释放数据包内存
     return NULL;
 }
 
 // 抓包回调函数
 void packet_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes) {
+    int *packet_count = (int *)user;
+    (*packet_count)++;
     // 申请内存保存数据包，并传递给线程来处理
-    PacketInfo *packet_info = create_packet_info(bytes, h->caplen, h->ts);
+    PacketInfo *packet_info = create_packet_info(bytes, h->caplen);
     if (!packet_info) return;
     
     pthread_t tid;
@@ -72,34 +48,31 @@ void packet_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *byt
 }
 
 int main() {
-    // 初始化数据包记录器
-    TrafficAnalyzer *traffic_analyzer = NULL;
-    if (init_packet_logger_and_analyzer(&packet_logger, &traffic_analyzer) != 0) {
-        fprintf(stderr, "初始化数据包记录器失败\n");
-        return 1;
-    }
- 
-    // 获取IP地址
     if (!get_local_ip(local_ip, INET_ADDRSTRLEN)) {
+        fprintf(stderr, "获取本地IP失败\n");
+        return 0;
+    }
+
+    // 流量统计器
+    if (init_packet_analyzer(&traffic_analyzer) != 0) {
+        fprintf(stderr, "初始化失败\n");
         return 1;
     }
     
-    // 设置信号处理器
+    // 注册信号
     signal(SIGINT, handle_signal);
 
     char errbuf[PCAP_ERRBUF_SIZE];      // 错误缓冲区
     pcap_if_t *devs;                    // 网卡设备列表
-
+    struct bpf_program fp;              // 过滤器
+    char filter_exp[] = "ip"; 
+    
     // 获取所有网卡设备
     if (pcap_findalldevs(&devs, errbuf) == -1) {
         fprintf(stderr, "无法获取网卡设备列表: %s\n", errbuf);
         return 1;
     }
-    if (devs == NULL) {
-        fprintf(stderr, "没有找到网卡设备\n");
-        return 1;
-    }
-
+    
     // 打开网卡设备
     handle = pcap_open_live(devs->name, BUFSIZ, 1, 1000, errbuf);
     if (handle == NULL) {
@@ -107,13 +80,17 @@ int main() {
         pcap_freealldevs(devs);
         return 0;
     }
+    pcap_compile(handle, &fp, filter_exp, 0, PCAP_NETMASK_UNKNOWN);
+    pcap_setfilter(handle, &fp);
 
     // 开始抓包
     printf("开始抓包...\n");
-    pcap_loop(handle, 0, packet_handler, NULL);
+    int packet_count = 0;
+    pcap_loop(handle, 0, packet_handler, (char *)&packet_count);
+    printf("\n抓包结束，抓取到 %d 个数据包\n", packet_count);
     
     // 按下ctrl+c触发信号，停止抓包，并记录包的数据流量
-    generate_logs_and_free(packet_logger, traffic_analyzer);
+    generate_logs_and_free(traffic_analyzer);
 
     // 释放网卡设备
     pcap_close(handle);

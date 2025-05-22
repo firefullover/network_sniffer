@@ -1,11 +1,10 @@
 #include "packet_parser.h"
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <arpa/inet.h>
-#include <netinet/in.h>
+#include <ifaddrs.h>
 
-PacketInfo* create_packet_info(const uint8_t *data, size_t length, struct timeval ts) {
+// 创建一个数据包信息结构体，并复制数据内容
+PacketInfo* create_packet_info(const uint8_t *data, size_t length) {
     PacketInfo *info = (PacketInfo*)malloc(sizeof(PacketInfo));
     if (!info) return NULL;
     
@@ -19,7 +18,6 @@ PacketInfo* create_packet_info(const uint8_t *data, size_t length, struct timeva
     memcpy(data_copy, data, length);
     info->data = data_copy;
     info->length = length;
-    info->ts = ts;
     return info;
 }
 
@@ -30,41 +28,112 @@ void free_packet_info(PacketInfo *info) {
     }
 }
 
-void parse_packet(PacketInfo *info) {
-    // 检查数据包有效性
-    if (!info || !info->data || info->length < sizeof(MyEthHeader)) {
-        printf("无效的数据包\n");
-        return;
+// 解析数据包，提取源IP、目的IP和数据包大小
+Packetdelivery* parse_packet(PacketInfo *info) {
+    if (!info) {
+        return NULL;
     }
     
     // 解析以太网头部
     const MyEthHeader *eth_header = (const MyEthHeader*)info->data;
-    
-    // 检查是否为IP数据包（以太网类型为0x0800）
-    uint16_t ether_type = ntohs(eth_header->ether_type);
-    if (ether_type != 0x0800) {
-        // printf("非IP数据包，无法解析IP地址\n");
-        return;
+
+    if (ntohs(eth_header->ether_type) == 0x0800 ) {
+        // 解析IP头部
+        const MyIpHeader *ip_header = (const MyIpHeader*)(info->data + sizeof(MyEthHeader));
+        
+        Packetdelivery* data = malloc(sizeof(Packetdelivery));
+        if (!data) {
+            return NULL;
+        }
+        // 提取源IP和目的IP地址，以及数据包大小
+        inet_ntop(AF_INET, &(ip_header->src_addr), data->src_ip, INET_ADDRSTRLEN);
+        inet_ntop(AF_INET, &(ip_header->dst_addr), data->dst_ip, INET_ADDRSTRLEN);
+        data->total_size = ntohs(ip_header->total_length);
+        /*
+        // 对上层协议处理
+        switch (ip_header->protocol)
+        {
+        case IPPROTO_TCP:
+            printf("Protocol: TCP\n");
+            // 获取tcp报头
+            MyTcpHeader *tcp = (MyTcpHeader *)(info->data + sizeof(MyEthHeader) + sizeof(MyIpHeader));
+            // 输出源和目的端口号
+            printf("From: %d\n", ntohs(tcp->sport));
+            printf("To: %d\n", ntohs(tcp->dport));
+            // 输出协议的payload
+            return NULL;
+        case IPPROTO_UDP:
+            printf("Protocol: UDP\n");
+            // 获取udp报头
+            MyUdpHeader *udp = (MyUdpHeader *)(info->data + sizeof(MyEthHeader) + sizeof(MyIpHeader));
+            // 输出源和目的端口号
+            printf("From: %d\n", ntohs(udp->sport));
+            printf("To: %d\n", ntohs(udp->dport));
+            // 输出协议的payload
+            return NULL;
+        case IPPROTO_ICMP:
+            printf("Protocol: ICMP\n");
+            return NULL;
+        default:
+            printf("Protocol: others\n");
+            return NULL;
+        }
+        */
+        return data;
     }
-    
-    // 检查数据包长度是否足够包含IP头部
-    if (info->length < sizeof(MyEthHeader) + sizeof(MyIpHeader)) {
-        // printf("IP数据包长度不足\n");
-        return;
+    else if (ntohs(eth_header->ether_type) == 0x0806)
+    {
+        printf("Protocol: ARP\n");
+        return NULL;
     }
-    
-    // 解析IP头部
-    const MyIpHeader *ip_header = (const MyIpHeader*)(info->data + sizeof(MyEthHeader));
-    
-    // 提取源IP和目的IP地址
-    char src_ip[INET_ADDRSTRLEN];
-    char dst_ip[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &(ip_header->src_addr), src_ip, INET_ADDRSTRLEN);
-    inet_ntop(AF_INET, &(ip_header->dst_addr), dst_ip, INET_ADDRSTRLEN);
-    
-    // 计算IP层总长度
-    int total_size = ntohs(ip_header->total_length);
-    
-    // 输出解析结果
-    // printf("源IP地址: %s,目的IP地址: %s,流量大小: %d bytes\n", src_ip, dst_ip, total_size);
+    else if (ntohs(eth_header->ether_type) == 0x86DD)
+    {
+        printf("Protocol: IPv6\n");
+        return NULL;
+    } else {
+        printf("Protocol: others\n");
+        return NULL;
+    }
+}
+
+void free_packet_delivery(Packetdelivery *data)
+{
+    if (data != NULL)
+    {
+        free(data);
+    }
+}
+
+// 获取本机IP地址
+int get_local_ip(char *local_ip, size_t size) {
+    struct ifaddrs *ifaddr, *ifa;
+    int family, s;
+
+    if (getifaddrs(&ifaddr) == -1) {
+        return 0;
+    }
+
+    // 遍历所有网络接口
+    for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
+        if (ifa->ifa_addr == NULL) continue;
+
+        family = ifa->ifa_addr->sa_family;
+
+        // 只处理IPv4地址
+        if (family == AF_INET) {
+            s = getnameinfo(ifa->ifa_addr, sizeof(struct sockaddr_in),
+                    local_ip, size, NULL, 0, NI_NUMERICHOST);
+            if (s != 0) continue;
+
+            // 跳过回环接口
+            if (strcmp(local_ip, "127.0.0.1") == 0) continue;
+
+            // 找到一个有效的非回环IPv4地址
+            freeifaddrs(ifaddr);
+            return 1;
+        }
+    }
+
+    freeifaddrs(ifaddr);
+    return 0;
 }

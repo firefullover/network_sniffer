@@ -107,9 +107,9 @@ int write_traffic_stats_to_file(TrafficAnalyzer *analyzer) {
     fprintf(file, "# 流量统计报告 - 生成时间: %s\n", ctime(&now));
 
     // 打印表格头部
-    fprintf(file, "+-------------------+------------------+-----------------+------------------+-----------------+\n");
-    fprintf(file, "|      本机IP       |      其他IP       |      流出流量     |      流入流量     |      总流量      |\n");
-    fprintf(file, "+-------------------+------------------+-----------------+------------------+-----------------+\n");
+    fprintf(file, "+-------------------+------------------+-----------------+------------------+------------------+\n");
+    fprintf(file, "|      本机IP       |      其他IP       |     流出流量    |      流入流量     |      总流量       |\n");
+    fprintf(file, "+-------------------+------------------+-----------------+------------------+------------------+\n");
 
     int count = 0;
     TrafficStatNode *current = analyzer->head;
@@ -129,7 +129,7 @@ int write_traffic_stats_to_file(TrafficAnalyzer *analyzer) {
                 current->stat.incoming_bytes,
                 current->stat.outgoing_bytes + current->stat.incoming_bytes);
 
-        fprintf(file, "+-------------------+------------------+------------------+-----------------+-----------------+\n");
+        fprintf(file, "+-------------------+------------------+------------------+-----------------+------------------+\n");
 
         total_outgoing += current->stat.outgoing_bytes;
         total_incoming += current->stat.incoming_bytes;

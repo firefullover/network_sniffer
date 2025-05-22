@@ -5,11 +5,13 @@
 #include <netinet/in.h>
 #include "packet_parser.h" 
 #include "packet_logger.h"
+#include "thread_pool.h"
 
 volatile int running = 1;                 // 运行标志
 pcap_t *handle = NULL;                    // 抓包句柄
 TrafficAnalyzer *traffic_analyzer = NULL; // 流量分析结构体
 char local_ip[INET_ADDRSTRLEN] = {0};     // 设备IP
+thread_pool_t *thread_pool = NULL;        // 线程池
 
 // 信号处理函数
 void handle_signal(int signal) {
@@ -42,9 +44,8 @@ void packet_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *byt
     PacketInfo *packet_info = create_packet_info(bytes, h->caplen);
     if (!packet_info) return;
     
-    pthread_t tid;
-    pthread_create(&tid, NULL, packet_parsing_callback, packet_info);
-    pthread_detach(tid);
+    // 将任务添加到线程池，而不是每次创建新线程
+    thread_pool_add_task(thread_pool, packet_parsing_callback, packet_info);
 }
 
 int main() {
@@ -56,6 +57,13 @@ int main() {
     // 流量统计器
     if (init_packet_analyzer(&traffic_analyzer) != 0) {
         fprintf(stderr, "初始化失败\n");
+        return 1;
+    }
+    
+    // 创建线程池，使用4个工作线程
+    thread_pool = thread_pool_create(4);
+    if (thread_pool == NULL) {
+        fprintf(stderr, "创建线程池失败\n");
         return 1;
     }
     
@@ -91,6 +99,9 @@ int main() {
     
     // 按下ctrl+c触发信号，停止抓包，并记录包的数据流量
     generate_logs_and_free(traffic_analyzer);
+    
+    // 销毁线程池
+    thread_pool_destroy(thread_pool);
 
     // 释放网卡设备
     pcap_close(handle);

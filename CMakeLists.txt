@@ -13,7 +13,7 @@ endif()
 include_directories(include)
 
 # 源文件
-file(GLOB SOURCES "src/main.c" "src/packet_logger.c" "src/packet_parser.c" "src/traffic_analyzer.c")
+file(GLOB SOURCES "src/*")
 
 add_executable(network_sniffer ${SOURCES})
 
